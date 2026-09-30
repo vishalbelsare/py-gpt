@@ -6,7 +6,7 @@
 # GitHub:  https://github.com/szczyglis-dev/py-gpt   #
 # MIT License                                        #
 # Created By  : Marcin Szczygliński                  #
-# Updated Date: 2026.08.12 16:30:00                  #
+# Updated Date: 2026.09.24 11:00:00                  #
 # ================================================== #
 
 from typing import Optional
@@ -15,10 +15,10 @@ from PySide6.QtGui import QColor
 
 from pygpt_net.core.types import MODE_IMAGE
 from pygpt_net.core.events import BaseEvent, Event
+from pygpt_net.core.text.mentions import to_model_text as mentions_to_model_text
 from pygpt_net.utils import trans, short_num
 
 from .mode import Mode
-from .tabs import Tabs
 from .vision import Vision
 
 class UI:
@@ -30,7 +30,6 @@ class UI:
         """
         self.window = window
         self.mode = Mode(window)
-        self.tabs = Tabs(window)
         self.vision = Vision(window)
         self.colors = {
             0: {'label': 'label.color.default', 'color': QColor(100, 100, 100), 'font': QColor(255, 255, 255)},
@@ -46,8 +45,8 @@ class UI:
         self.splitter_output_size_input = None
         self.splitter_output_size_files = None
 
-        self._last_ctx_string = None
         self._last_input_string = None
+        self._last_input_counter_tooltip = None
         self._last_chat_model = None
         self._last_chat_label = None
 
@@ -68,6 +67,7 @@ class UI:
         self.mode.update()
         self.update_tokens()
         self.vision.update()
+        self.window.controller.plugins.update_annotations_info()
         self.window.controller.agent.legacy.update()
         self.img_update_available_modes()
         self.img_update_available_resolutions()
@@ -82,7 +82,7 @@ class UI:
 
         # on input begin
         if name == Event.INPUT_BEGIN:
-            self.tabs.switch_to_first_chat()  # switch to first active chat tab
+            self.window.controller.tabs.switch_to_first_chat()  # switch to first active chat tab
         elif name == Event.CTX_END:
             self.update_tokens()  # update UI
 
@@ -107,7 +107,7 @@ class UI:
 
     def init_computer_env(self):
         """Init computer environment"""
-        env = self.window.core.config.get("remote_tools.computer_use.env", "linux")
+        env = self.window.core.config.get("computer_use.env", "linux")
         if env == "" or env is None:
             if self.window.core.platforms.is_windows():
                 env = "windows"
@@ -122,7 +122,7 @@ class UI:
 
     def init_computer_sandbox(self):
         """Init computer sandbox"""
-        sandbox = bool(self.window.core.config.get("remote_tools.computer_use.sandbox", False))
+        sandbox = bool(self.window.core.config.get("computer_use.sandbox", False))
         node = self.window.ui.nodes["computer_sandbox"]
         if node.isChecked() != sandbox:
             node.box.setChecked(sandbox)
@@ -134,8 +134,8 @@ class UI:
         :param env: selected environment
         """
         cfg = self.window.core.config
-        if cfg.get("remote_tools.computer_use.env") != env:
-            cfg.set("remote_tools.computer_use.env", env)
+        if cfg.get("computer_use.env") != env:
+            cfg.set("computer_use.env", env)
             cfg.save()
 
     def on_computer_sandbox_toggled(self, checked: bool):
@@ -145,8 +145,8 @@ class UI:
         :param checked: bool
         """
         cfg = self.window.core.config
-        if cfg.get("remote_tools.computer_use.sandbox") != checked:
-            cfg.set("remote_tools.computer_use.sandbox", checked)
+        if cfg.get("computer_use.sandbox") != checked:
+            cfg.set("computer_use.sandbox", checked)
             cfg.save()
 
     def update_toolbox(self):
@@ -175,29 +175,46 @@ class UI:
         """Update tokens counter in real-time"""
         ui_nodes = self.window.ui.nodes
 
-        # Read raw input for accurate character count (without trimming)
-        raw_text = ui_nodes['input'].toPlainText()
-        prompt = raw_text.strip()
+        # Keep the character count aligned with the visible editor text, but
+        # count tokens from the same durable representation that is sent to the
+        # model (semantic @mentions expand to attachment/file_context tags).
+        input_node = ui_nodes['input']
+        raw_text = input_node.toPlainText()
+        if hasattr(input_node, "serialize_mentions"):
+            prompt_text = mentions_to_model_text(input_node.serialize_mentions())
+        else:
+            prompt_text = raw_text
+        prompt = prompt_text.strip()
 
-        input_tokens, system_tokens, extra_tokens, ctx_tokens, ctx_len, ctx_len_all, \
+        input_tokens, system_tokens, extra_tokens, ctx_tokens, _, _, \
             sum_tokens, max_current, threshold = self.window.core.tokens.get_current(prompt)
         attachments_tokens = self.window.controller.chat.attachment.get_current_tokens()
         sum_tokens += attachments_tokens
-
-        ctx_string = f"{short_num(ctx_len)} / {short_num(ctx_len_all)} - {short_num(ctx_tokens)} {trans('ctx.tokens')}"
-        if ctx_string != self._last_ctx_string:
-            ui_nodes['prompt.context'].setText(ctx_string)
-            self._last_ctx_string = ctx_string
 
         if max_current > 0:
             max_str = short_num(max_current)
         else:
             max_str = "∞"
 
-        input_string = f"{short_num(input_tokens)} + {short_num(system_tokens)} + {short_num(ctx_tokens)} + {short_num(extra_tokens)} + {short_num(attachments_tokens)} = {short_num(sum_tokens)} / {max_str}"
+        input_string = f"~ {short_num(sum_tokens)} / {max_str}"
         if input_string != self._last_input_string:
             ui_nodes['input.counter'].setText(input_string)
             self._last_input_string = input_string
+
+        # Keep the footer compact and move the detailed estimated-token
+        # breakdown into the tooltip. Use the same compact k/M/B formatting
+        # in both places. The leading '~' on TOTAL marks the estimate.
+        tooltip_max = short_num(max_current) if max_current > 0 else "∞"
+        tooltip = (
+            f"{trans('tip.tokens.system_prompt')}: {short_num(system_tokens)}\n"
+            f"{trans('tip.tokens.user_input')}: {short_num(input_tokens)}\n"
+            f"{trans('tip.tokens.context')}: {short_num(ctx_tokens)}\n"
+            f"{trans('tip.tokens.attachment')}: {short_num(attachments_tokens)}\n\n"
+            f"{trans('tip.tokens.total')}: ~ {short_num(sum_tokens)} / {tooltip_max}"
+        )
+        if tooltip != self._last_input_counter_tooltip:
+            ui_nodes['input.counter'].setToolTip(tooltip)
+            self._last_input_counter_tooltip = tooltip
 
         # Update Input tab tooltip with live "<chars> chars (~<tokens> tokens)" string
         try:
@@ -237,12 +254,8 @@ class UI:
 
         :param label: label
         """
-        mode = self.window.core.config.get('mode')
-        allowed = self.window.core.ctx.is_allowed_for_mode(mode)
         if label is None:
             label = ''
-        if allowed:
-            label += ' (+)'
         label_str = str(label)
         if label_str != self._last_chat_label:
             self.window.ui.nodes['chat.label'].setText(label_str)

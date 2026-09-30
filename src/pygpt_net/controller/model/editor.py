@@ -6,7 +6,7 @@
 # GitHub:  https://github.com/szczyglis-dev/py-gpt   #
 # MIT License                                        #
 # Created By  : Marcin Szczygliński                  #
-# Updated Date: 2025.12.27 20:00:00                  #
+# Updated Date: 2026.08.19 14:57:00                  #
 # ================================================== #
 
 import copy
@@ -54,46 +54,61 @@ class Editor:
             "mode": {
                 "type": "bool_list",  # list of comma separated values
                 "label": "model.mode",
+                "description": "model.mode.desc",
                 "use": "modes",
+            },
+            "tool_calls": {
+                "type": "bool",
+                "label": "model.tool_calls",
+                "description": "model.tool_calls.desc",
             },
             "default": {
                 "type": "bool",
                 "label": "model.default",
+                "description": "model.default.desc",
             },
             "is_hidden": {
                 "type": "bool",
                 "label": "model.is_hidden",
                 "description": "model.is_hidden.desc",
             },
+            "reasoning_effort": {
+                "type": "bool",
+                "label": "model.reasoning_effort",
+                "description": "model.reasoning_effort.desc",
+            },
             "input": {
                 "type": "bool_list",  # list of comma separated values
                 "label": "model.input",
+                "description": "model.input.desc",
                 "use": "multimodal",
-                "advanced": True,
             },
             "output": {
                 "type": "bool_list",  # list of comma separated values
                 "label": "model.output",
+                "description": "model.output.desc",
                 "use": "multimodal",
-                "advanced": True,
             },
             "ctx": {
                 "type": "int",
                 "label": "model.ctx",
                 "description": "model.ctx.desc",
-                "advanced": True,
             },
             "tokens": {
                 "type": "int",
                 "label": "model.tokens",
                 "description": "model.tokens.desc",
-                "advanced": True,
             },
-            "tool_calls": {
-                "type": "bool",
-                "label": "model.tool_calls",
-                "description": "model.tool_calls.desc",
-                "advanced": True,
+            "custom_api_endpoint": {
+                "type": "text",
+                "label": "model.custom_api_endpoint",
+                "description": "model.custom_api_endpoint.desc",
+            },
+            "custom_api_key": {
+                "type": "text",
+                "label": "model.custom_api_key",
+                "description": "model.custom_api_key.desc",
+                "secret": True,
             },
             "llama_index.args": {
                 "type": "dict",

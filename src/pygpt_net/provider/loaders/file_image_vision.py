@@ -6,10 +6,14 @@
 # GitHub:  https://github.com/szczyglis-dev/py-gpt   #
 # MIT License                                        #
 # Created By  : Marcin Szczygliński                  #
-# Updated Date: 2025.08.06 01:00:00                  #
+# Updated Date: 2026.08.16 18:25:00                  #
 # ================================================== #
 
-from llama_index.core.readers.base import BaseReader
+from __future__ import annotations
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from llama_index.core.readers.base import BaseReader
 
 from .base import BaseLoader
 
@@ -50,4 +54,8 @@ class Loader(BaseLoader):
         args["window"] = self.window  # pass window instance
         if self.window is not None:
             args["use_local"] = self.window.core.config.get("llama.hub.loaders.use_local", False)
+            args["api_model"] = (
+                self.window.core.plugins.get_option("idx_llama_index", "model_image")
+                or args.get("api_model", "gpt-4o")
+            )
         return ImageVisionLLMReader(**args)

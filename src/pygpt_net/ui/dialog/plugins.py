@@ -6,7 +6,7 @@
 # GitHub:  https://github.com/szczyglis-dev/py-gpt   #
 # MIT License                                        #
 # Created By  : Marcin Szczygliński                  #
-# Updated Date: 2026.01.06 20:00:00                  #
+# Updated Date: 2026.09.29 19:30:00                  #
 # ================================================== #
 
 from PySide6.QtCore import Qt
@@ -200,11 +200,22 @@ class Plugins:
 
                 for tab_id in content_tabs:
                     tab_name = tab_id
-                    # if translation, translate tab name
-                    if tab_id in plugin.tabs:
+                    translated_tab_name = None
+                    if plugin.use_locale:
+                        domain = f"plugin.{plugin.id}"
+                        plugin_tab_key = f"tab.{tab_id}"
+                        translated = trans(plugin_tab_key, False, domain)
+                        if translated != plugin_tab_key:
+                            translated_tab_name = translated
+                    if translated_tab_name is None:
+                        global_tab_key = f"plugin.tab.{tab_id}"
+                        translated = trans(global_tab_key)
+                        if translated != global_tab_key:
+                            translated_tab_name = translated
+                    if translated_tab_name is not None:
+                        tab_name = translated_tab_name
+                    elif tab_id in plugin.tabs:
                         tab_name = plugin.tabs[tab_id]
-                        if tab_id == "general":
-                            tab_name = trans("plugin.tab.general")
                     else:
                         tab_name = tab_name.replace("_", " ").capitalize()
                     scroll_widget = QWidget()
@@ -229,6 +240,10 @@ class Plugins:
 
             area_widget = QWidget()
             area_widget.setLayout(area)
+            # Keep a stable plugin identity on the tab. Tab/list positions may
+            # differ after a runtime language change because translated plugin
+            # names can sort differently.
+            area_widget.setProperty('plugin_id', id)
 
             # append to tab
             self.window.ui.tabs['plugin.settings'].addTab(area_widget, name_txt)
@@ -357,8 +372,16 @@ class Plugins:
                 apply(option)
                 widgets[key] = OptionCombo(self.window, parent, key, option)  # combobox
             elif t == 'cmd':
-                apply(option)
                 widgets[key] = OptionCmd(self.window, plugin, parent, key, option)  # command
+            elif t == 'button':
+                button = QPushButton()
+                button.setAutoDefault(False)
+                callback = option.get('callback')
+                if isinstance(callback, str):
+                    callback = getattr(plugin, callback, None)
+                if callable(callback):
+                    button.clicked.connect(lambda checked=False, cb=callback: cb())
+                widgets[key] = button
 
         return widgets
 
@@ -407,8 +430,8 @@ class Plugins:
         :param option: option dict
         :return: QVBoxLayout
         """
-        one_column_types = ('textarea', 'dict', 'bool', 'cmd')
-        no_label_types = ('bool', 'cmd')
+        one_column_types = ('textarea', 'dict', 'bool', 'cmd', 'button')
+        no_label_types = ('bool', 'cmd', 'button')
         no_desc_types = 'cmd'
         allow_locale = True
 
@@ -440,6 +463,10 @@ class Plugins:
                 # txt_tooltip = txt_desc
 
         txt_desc = trans_placeholder_apply(txt_desc)
+
+        if option['type'] == 'button':
+            widget.setText(txt_title)
+            widget.setToolTip(txt_desc)
 
         """
         if option['type'] not in no_desc_types:
@@ -523,11 +550,17 @@ class Plugins:
         """
         model = self.window.ui.models[id]
         model.removeRows(0, model.rowCount())
-        i = 0
-        for n in data:
+
+        # Re-sort by the currently active locale, but store the stable plugin
+        # id in every row. Runtime language changes can change alphabetical
+        # order, so row numbers must never be used as plugin identifiers.
+        pm = self.window.core.plugins
+        plugin_ids = [pid for pid in pm.get_ids(sort=True) if pid in data]
+        for i, plugin_id in enumerate(plugin_ids):
             model.insertRow(i)
-            name = self.window.core.plugins.get_name(data[n].id)
-            tooltip = self.window.core.plugins.get_desc(data[n].id)
-            model.setData(model.index(i, 0), name)
-            model.setData(model.index(i, 0), tooltip, Qt.ToolTipRole)
-            i += 1
+            index = model.index(i, 0)
+            name = pm.get_name(plugin_id)
+            tooltip = pm.get_desc(plugin_id)
+            model.setData(index, name)
+            model.setData(index, tooltip, Qt.ToolTipRole)
+            model.setData(index, plugin_id, Qt.UserRole)

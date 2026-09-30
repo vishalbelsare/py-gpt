@@ -17,7 +17,6 @@ from PySide6.QtCore import QTimer, Slot, QObject
 from PySide6.QtWidgets import QApplication
 
 from pygpt_net.item.ctx import CtxItem
-from pygpt_net.plugin.audio_input.worker import ControlWorker
 from pygpt_net.core.events import ControlEvent, AppEvent
 from pygpt_net.utils import trans
 
@@ -51,6 +50,13 @@ class Voice(QObject):
         self.pending_event = None
         self.play_timer = QTimer(self.window)
         self.play_timer.timeout.connect(self.play_audio)
+
+    def get_input_path(self) -> str:
+        """Return the temporary voice-control audio path."""
+        return os.path.join(
+            self.window.core.config.get_user_dir("tmp"),
+            self.input_file,
+        )
 
     def setup(self):
         """Setup voice control"""
@@ -277,7 +283,7 @@ class Voice(QObject):
             self.timer.stop()
             self.timer = None
         self.switch_btn_start()  # switch button to start
-        path = os.path.join(self.window.core.config.path, self.input_file)
+        path = self.get_input_path()
         self.window.core.audio.capture.set_path(path)
 
         if self.window.core.audio.capture.has_source():
@@ -310,12 +316,10 @@ class Voice(QObject):
 
         try:
             # worker
+            from pygpt_net.plugin.audio_input.worker import ControlWorker
             worker = ControlWorker()
             worker.window = self.window
-            worker.path = os.path.join(
-                self.window.core.config.path,
-                self.input_file,
-            )
+            worker.path = self.get_input_path()
             # signals
             worker.signals.transcribed.connect(self.handle_transcribed)
             worker.signals.finished.connect(self.handle_input)

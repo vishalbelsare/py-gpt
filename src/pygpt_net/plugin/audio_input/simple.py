@@ -6,10 +6,8 @@
 # GitHub:  https://github.com/szczyglis-dev/py-gpt   #
 # MIT License                                        #
 # Created By  : Marcin Szczygliński                  #
-# Updated Date: 2025.08.31 23:00:00                  #
+# Updated Date: 2026.09.24 11:00:00                  #
 # ================================================== #
-
-import os
 
 from PySide6.QtCore import QTimer
 
@@ -109,10 +107,21 @@ class Simple:
                 self.plugin.window.core.config.save()
                 return
 
+        # prepare local provider before recording. In particular, do not capture
+        # the first utterance while a missing local Whisper model is downloading.
+        if not realtime:
+            try:
+                if not self.plugin.ensure_provider_ready():
+                    return
+            except Exception as e:
+                self.plugin.error(e)
+                self.switch_btn_start()
+                return
+
         # enable continuous mode if notepad tab is active
         self.plugin.window.core.audio.capture.set_repeat_callback(self.on_stop)
         continuous_enabled = self.plugin.window.core.config.get('audio.input.continuous', False)
-        if continuous_enabled and self.plugin.window.controller.ui.tabs.get_current_type() == Tab.TAB_NOTEPAD:
+        if continuous_enabled and self.plugin.window.controller.tabs.get_current_type() == Tab.TAB_NOTEPAD:
             self.plugin.window.core.audio.capture.set_loop(True)  # set loop
         else:
             self.plugin.window.core.audio.capture.set_loop(False)
@@ -172,7 +181,7 @@ class Simple:
             self.timer.stop()
             self.timer = None
         self.switch_btn_start()  # switch button to start
-        path = os.path.join(self.plugin.window.core.config.path, self.plugin.input_file)
+        path = self.plugin.get_input_path()
         self.plugin.window.core.audio.capture.set_path(path)
 
         if self.plugin.window.core.audio.capture.has_source():
@@ -203,7 +212,7 @@ class Simple:
 
     def on_stop(self):
         """Handle auto-transcribe"""
-        path = os.path.join(self.plugin.window.core.config.path, self.plugin.input_file)
+        path = self.plugin.get_input_path()
         self.plugin.window.core.audio.capture.set_path(path)
         self.plugin.window.core.audio.capture.stop()
         self.plugin.window.core.audio.capture.start()
